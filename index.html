@@ -408,7 +408,7 @@ button,.opt,.mode,.iconbtn,.backlink,.toggle,.chip,.submit,.key,.item,.audio-btn
 </div>
 <div class="app" id="appRoot" style="display:none">
   <div class="topbar">
-    <div class="brand"><span class="logo">B1U2</span> 高考一轮·B1U2 词汇闯关<span style="margin-left:6px;font-size:11px;font-weight:800;color:#fff;background:linear-gradient(135deg,#1aa260,#13a05a);border-radius:999px;padding:2px 9px">v1.0.0·20260902</span></div>
+    <div class="brand"><span class="logo">B1U2</span> 高考一轮·B1U2 词汇闯关<span style="margin-left:6px;font-size:11px;font-weight:800;color:#fff;background:linear-gradient(135deg,#1aa260,#13a05a);border-radius:999px;padding:2px 9px">v1.0.1·20260902</span></div>
     <div class="right">
       <button class="iconbtn" onclick="showGuide()">❓ 帮助</button>
       <button class="iconbtn" onclick="resetProgressConfirm()">🗑 重置</button>
@@ -2237,6 +2237,23 @@ button,.opt,.mode,.iconbtn,.backlink,.toggle,.chip,.submit,.key,.item,.audio-btn
     }
     return chosen;
   }
+  /* 易混干扰：从 CONFUSE_PAIRS 取配对词释义作为首选干扰项（对应 docx 易混辨析列）
+   * 修复问题：原 pickSmartWrong 按“关键词互斥”筛干扰，导致 burn up/burn down 这类高混淆对
+   * 因共享“烧”字被排除，反而塞入无关的“上发条/喉咙发哑”，降低题目区分度。
+   * 规则：测 a 词 → 用 b 的释义(bb)作干扰；测 b 词 → 用 a 的核心释义作干扰。*/
+  function confusableDefFor(word) {
+    var lw = String(word || '').toLowerCase();
+    for (var i = 0; i < CONFUSE_PAIRS.length; i++) {
+      var c = CONFUSE_PAIRS[i];
+      if (String(c.a).toLowerCase() === lw) return c.bb;            // 测 a → 用配对词 b 的释义
+      if (String(c.b).toLowerCase() === lw) {                       // 测 b → 用配对词 a 的释义
+        var aWord = WORDS.filter(function (x) { return x.word.toLowerCase() === String(c.a).toLowerCase(); })[0];
+        if (aWord) return (aWord.senses[0] || {}).cnDef;
+      }
+    }
+    return null;
+  }
+
   function escapeRegExp(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
   /* ---------- 词形变体生成（规则化屈折变化，用于句子挖空） ----------
    * 覆盖：原形 / 三单·复数 / 过去式·过去分词 / 现在分词。 */
@@ -2711,6 +2728,14 @@ function interleave(base, extra) {
       var wrongs = pickSmartWrong(ALL_SENSES, testSense, effWrong + 3)
         .filter(function (s) { return !correctDefs[s.cnDef]; })
         .slice(0, effWrong);
+      // 易混优先：把 docx 易混列配对词释义注入为首选干扰，提升题目区分度
+      var _cf = confusableDefFor(q.word);
+      if (_cf && !correctDefs[_cf]) {
+        if (!wrongs.some(function (s2) { return s2.cnDef === _cf; })) {
+          if (wrongs.length >= effWrong) wrongs[wrongs.length - 1] = { cnDef: _cf, type: '易混', pos: testSense.pos };
+          else wrongs.push({ cnDef: _cf, type: '易混', pos: testSense.pos });
+        }
+      }
       var options = shuffle(q.senses.map(function (s) { return { def: s.cnDef, correct: true }; })
         .concat(wrongs.map(function (s) { return { def: s.cnDef, correct: false }; })));
       var correctSet = {};
@@ -2750,6 +2775,14 @@ function interleave(base, extra) {
       var wrongs = pickSmartWrong(ALL_SENSES, testSense, effWrong + 3)
         .filter(function (s) { return !correctDefs[s.cnDef]; })
         .slice(0, effWrong);
+      // 易混优先：把 docx 易混列配对词释义注入为首选干扰，提升题目区分度
+      var _cf = confusableDefFor(w.word);
+      if (_cf && !correctDefs[_cf]) {
+        if (!wrongs.some(function (s2) { return s2.cnDef === _cf; })) {
+          if (wrongs.length >= effWrong) wrongs[wrongs.length - 1] = { cnDef: _cf, type: '易混', pos: testSense.pos };
+          else wrongs.push({ cnDef: _cf, type: '易混', pos: testSense.pos });
+        }
+      }
       var options = shuffle(w.senses.map(function (s) { return { def: s.cnDef, correct: true }; })
         .concat(wrongs.map(function (s) { return { def: s.cnDef, correct: false }; })));
       var correctSet = {};
