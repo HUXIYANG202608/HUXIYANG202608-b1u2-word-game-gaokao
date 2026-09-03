@@ -408,7 +408,7 @@ button,.opt,.mode,.iconbtn,.backlink,.toggle,.chip,.submit,.key,.item,.audio-btn
 </div>
 <div class="app" id="appRoot" style="display:none">
   <div class="topbar">
-    <div class="brand"><span class="logo">B1U2</span> 高考一轮·B1U2 词汇闯关<span style="margin-left:6px;font-size:11px;font-weight:800;color:#fff;background:linear-gradient(135deg,#1aa260,#13a05a);border-radius:999px;padding:2px 9px">v1.0.1·20260902</span></div>
+    <div class="brand"><span class="logo">B1U2</span> 高考一轮·B1U2 词汇闯关<span style="margin-left:6px;font-size:11px;font-weight:800;color:#fff;background:linear-gradient(135deg,#1aa260,#13a05a);border-radius:999px;padding:2px 9px">v1.0.3·20260903</span></div>
     <div class="right">
       <button class="iconbtn" onclick="showGuide()">❓ 帮助</button>
       <button class="iconbtn" onclick="resetProgressConfirm()">🗑 重置</button>
@@ -2245,11 +2245,19 @@ button,.opt,.mode,.iconbtn,.backlink,.toggle,.chip,.submit,.key,.item,.audio-btn
     var lw = String(word || '').toLowerCase();
     for (var i = 0; i < CONFUSE_PAIRS.length; i++) {
       var c = CONFUSE_PAIRS[i];
-      if (String(c.a).toLowerCase() === lw) return c.bb;            // 测 a → 用配对词 b 的释义
-      if (String(c.b).toLowerCase() === lw) {                       // 测 b → 用配对词 a 的释义
-        var aWord = WORDS.filter(function (x) { return x.word.toLowerCase() === String(c.a).toLowerCase(); })[0];
-        if (aWord) return (aWord.senses[0] || {}).cnDef;
+      var foeName = null;
+      if (String(c.a).toLowerCase() === lw) foeName = c.b;          // 测 a → 用配对词 b 的释义
+      else if (String(c.b).toLowerCase() === lw) foeName = c.a;     // 测 b → 用配对词 a 的释义
+      if (!foeName) continue;
+      /* 关键：与 pickSmartWrong 共享同一释义字符串（cnDef 完全一致），
+         让下游 !correctDefs[_cf] 与 !wrongs.some(s2=>s2.cnDef===_cf) 的精确去重真正生效；
+         否则“bb 改写释义”会与“词表真实释义”重复，出现“多指建筑烧毁 / (建筑物)烧毁”这种近义冗余。 */
+      var foeInDict = WORDS.filter(function (x) { return x.word.toLowerCase() === String(foeName).toLowerCase(); })[0];
+      if (foeInDict) {
+        var cs = coreSenseOf(foeInDict);
+        if (cs && cs.cnDef) return cs.cnDef;
       }
+      return c.bb; // 兜底：配对词不在词表时用 bb
     }
     return null;
   }
@@ -2590,6 +2598,44 @@ var CONFUSE_PAIRS = [
   }
 ];
 
+  /* 形近词辨识题库（选词形 · 新题型）
+   * 与 CONFUSE_PAIRS 的“选词义”互补：本题型选项为【拼写】，让学生从一组形近拼写中
+   * 选出与题干释义匹配的正确词形。anchor = B1U2 表内词；prompt = 唯一锁定该词的释义/语境；
+   * foes = 形近真实英文词（拼写相似、词义不同）；tip = 答后辨析点。全部经词表核验。 */
+  var NEARHOMOGRAPH_PAIRS = [
+    { anchor:"title",     prompt:"n. 文章/作品的名称（位于正文之前的简短文字）", foes:["topic","tidal","little"], tip:"title 指文章/书籍标题；topic 指话题；tidal 指潮汐的。" },
+    { anchor:"behaviour",  prompt:"n. 举止表现（英式拼写；美式拼写少一个字母 u）", foes:["behave","harbor","beard"], tip:"behaviour 是名词；behave 是动词（表现）。" },
+    { anchor:"unique",     prompt:"adj. 独一无二的；特有的（用于 be ___ to 句型）", foes:["unit","unite","antique"], tip:"unique 强调独一无二；unit 是单元/单位。" },
+    { anchor:"likely",     prompt:"adj. 有可能的（用于 be ___ to do sth 句型）", foes:["alike","like","unlike"], tip:"likely 表示可能性；alike 表示相似的。" },
+    { anchor:"remind",     prompt:"v. 提示他人不要忘记（___ sb of / to do）", foes:["remember","mind","remain"], tip:"remind 是提醒/使回想；remember 是自己记得。" },
+    { anchor:"rather",     prompt:"adv. 宁愿（用于 would ___ do 句型）", foes:["other","father","weather"], tip:"rather 表宁愿；other 是其他的。" },
+    { anchor:"recognise",  prompt:"v. 辨认出某人/某物的身份（be ___d as 被公认为）", foes:["realize","revise","rescue"], tip:"recognise 辨认出人/物；realise 明白道理。" },
+    { anchor:"base",       prompt:"n. 底部；基地（构成事物的基础；be ___d on 基于）", foes:["basis","basin","case"], tip:"base 偏具象（底座/基地）；basis 偏抽象（理论基础）。" },
+    { anchor:"aware",      prompt:"adj. 知道某事存在的（be ___ of / that 从句）", foes:["award","awe","area"], tip:"aware 意识到；award 授予奖品。" },
+    { anchor:"negative",   prompt:"adj. 消极否定的（与 positive 相反）", foes:["native","negate","novel"], tip:"negative 消极/否定；native 本土的。" },
+    { anchor:"positive",   prompt:"adj. 积极肯定的（与 negative 相反）", foes:["primitive","position","pose"], tip:"positive 积极；primitive 原始的。" },
+    { anchor:"intend",     prompt:"v. 计划做某事（___ to do；be ___ed for 专为……设计）", foes:["extend","attend","entry"], tip:"intend 主观打算；extend 延伸；attend 参加。" },
+    { anchor:"reflect",    prompt:"v. 镜像反射光线；认真回顾思考（___ on/upon）", foes:["reform","refuse","relief"], tip:"reflect 反射/反思；reform 改革。" },
+    { anchor:"addition",   prompt:"n. 加法；增加物（in ___ to 除……之外）", foes:["edition","addict","edit"], tip:"in addition (to) 表“此外”；edition 是版本。" },
+    { anchor:"wicked",     prompt:"adj. 邪恶的；【口语】极好的", foes:["widen","wick","weed"], tip:"wicked 表邪恶；widen 是拓宽。" },
+    { anchor:"boot",       prompt:"n. 靴子；【英】汽车后部放行李的空间", foes:["foot","root","boat"], tip:"boot 靴子；foot 脚。" },
+    { anchor:"flat",       prompt:"adj. 平坦的；轮胎无气的（a ___ tyre）", foes:["fat","flight","flag"], tip:"flat 平的/瘪的；flight 航班。" },
+    { anchor:"gas",        prompt:"n. 气体；【美】加油站售卖的燃料", foes:["gap","gut","gasp"], tip:"gas 气体；gap 缺口。" },
+    { anchor:"throat",     prompt:"n. 喉部（发声/吞咽部位）；have a sore ___（嗓子疼）", foes:["threat","throne","thought"], tip:"throat 喉咙；threat 威胁。" },
+    { anchor:"removal",    prompt:"n. 移走的动作或过程（the ___ of rubbish）", foes:["review","remove","reveal"], tip:"removal 移除的行为；review 复习。" },
+    { anchor:"origin",     prompt:"n. 事物的起始源头（the ___ of a custom）", foes:["organ","original","orange"], tip:"origin 起源；organ 器官。" },
+    { anchor:"originally", prompt:"adv. 起初（一开始；用于 It was ___ built 等）", foes:["ordinarily","original","origin"], tip:"originally 时间上“起初”；ordinarily 平常地。" },
+    { anchor:"material",   prompt:"n. 布料/原料（用于制作某物的物质）", foes:["maternal","matter","mental"], tip:"material 原材料；maternal 母亲一方的。" },
+    { anchor:"defeat",     prompt:"v. 在比赛中击败对手（___ the opponent）", foes:["defect","defend","debt"], tip:"defeat 击败对手；defend 防御。" },
+    { anchor:"victory",    prompt:"n. 比赛/战斗获胜的结果（win a ___）", foes:["victim","victor","vector"], tip:"victory 胜利；victim 受害者。" },
+    { anchor:"pine",       prompt:"n. 一种常绿针叶树（高大，木材可制家具）", foes:["pin","line","pane"], tip:"pine 松树；pine for 固定短语表思念。" },
+    { anchor:"ham",        prompt:"n. 腌制后食用的猪腿肉", foes:["harm","him","helm"], tip:"ham 火腿；harm 伤害。" },
+    { anchor:"seasick",    prompt:"adj. 乘船时感到不适想呕吐的", foes:["homesick","sink","seem"], tip:"-sick 后缀表“……不适”；seasick 晕船。" },
+    { anchor:"homesick",   prompt:"adj. 远离家乡时感到思念难过的", foes:["seasick","home","homes"], tip:"homesick 思乡；seasick 晕船。" },
+    { anchor:"sculpt",     prompt:"v. 用凿子等工具塑形（石头/木头等）", foes:["sculpture","scalp","scold"], tip:"sculpt 是动词；sculpture 是名词。" },
+    { anchor:"sculpture",  prompt:"n. 雕刻出来的立体艺术品", foes:["sculpt","scalp","scold"], tip:"sculpture 是名词；sculpt 是动词。" }
+  ];
+
 /* 形近词判断选择题（与 chooseOption 单选路径兼容）
  * 第 3 参 rate 两种形态：
  *   rate = 0.25                        → 老语义：对"命中候选词"的采样率
@@ -2701,10 +2747,73 @@ function buildConfusableWordQuestions(words, opt, rate) {
       __star: h.w.difficulty || 1
     });
   });
-  return out;
-}
+    return out;
+  }
 
-/* 把附加题随机插入主队列 */
+  /* 形近词辨识（选词形）生成器——与 buildConfusableWordQuestions（选词义）互补。
+   * 复用 choose 单选渲染管线：options 里放的是【拼写】，点击即即时判对错。
+   * 题干 = prompt（释义/语境），唯一锁定 anchor；干扰项 = foes（形近真实词，词义不同）。
+   * rate 同选词义：{ ratio, baseLen } 控制最终占比（拼写≈12%、混合≈18%）。 */
+  function buildNearHomographQuestions(words, opt, rate) {
+    var p = 0.12;
+    if (typeof rate === 'number') p = rate;
+    else if (rate && typeof rate.ratio === 'number') p = rate.ratio;
+    var dict = {};
+    (global.WORDS || []).forEach(function (w) { if (w && w.word) dict[String(w.word).toLowerCase()] = w; });
+    var nWrong = (opt && typeof opt.wrong === 'number') ? opt.wrong : 3;
+    var pool = starFilter(words, opt);
+    var hits = [];
+    pool.forEach(function (w) {
+      if (!w || !w.word) return;
+      if (/[\s.''\u2019-]/.test(w.word)) return;            // 跳过短语（字母盘无法输入）
+      var lw = String(w.word).toLowerCase();
+      var pair = null;
+      for (var i = 0; i < NEARHOMOGRAPH_PAIRS.length; i++) {
+        if (String(NEARHOMOGRAPH_PAIRS[i].anchor).toLowerCase() === lw) { pair = NEARHOMOGRAPH_PAIRS[i]; break; }
+      }
+      if (!pair) return;
+      var right = coreSenseOf(w) || (w.senses && w.senses[0]);
+      if (!right || !right.cnDef) return;
+      var foes = (pair.foes || []).filter(function (f) { return String(f).toLowerCase() !== lw; });
+      if (foes.length < 1) return;
+      hits.push({ w: w, right: right, anchor: w.word, prompt: pair.prompt, foes: foes, tip: pair.tip });
+    });
+    /* 采样：按目标题数精确控制最终占比 */
+    var target = -1;
+    if (rate && typeof rate === 'object' && typeof rate.baseLen === 'number' && rate.baseLen > 0) {
+      target = Math.round(rate.baseLen * p);
+    }
+    if (target >= 0) {
+      if (target < hits.length) hits = shuffle(hits).slice(0, target);
+    } else {
+      hits = hits.filter(function () { return Math.random() <= p; });
+    }
+    var out = [];
+    hits.forEach(function (h) {
+      var take = Math.min(h.foes.length, nWrong);
+      if (take < 1) return;
+      var wrongs = shuffle(h.foes.slice()).slice(0, take);
+      var options = shuffle([{ def: h.anchor, correct: true }]
+        .concat(wrongs.map(function (f) { return { def: f, correct: false }; })));
+      out.push({
+        type: 'choose', multi: false,
+        word: h.anchor,                 // 关闭🔊音频：直接朗读会立即泄露答案，使题目失去“辨形”训练价值
+        noAudio: true,                  // renderQuestion 据此跳过音频按钮
+        tag: '形近词 · 选词形',
+        hint: h.prompt,
+        testSense: h.right,
+        options: options,
+        allSenses: h.w.senses,
+        coreSense: h.right,
+        hideEx: true,
+        tip: h.tip,
+        __star: h.w.difficulty || 1
+      });
+    });
+    return out;
+  }
+
+  /* 把附加题随机插入主队列 */
 function interleave(base, extra) {
   var out = (base || []).slice();
   (extra || []).forEach(function (q) {
@@ -2819,7 +2928,7 @@ function interleave(base, extra) {
     buildSentenceQuestion: buildSentenceQuestion, ALL_WORDS: ALL_WORDS, ALL_SENSES: ALL_SENSES,
     coreSenseOf: coreSenseOf, buildSpellWordQuestions: buildSpellWordQuestions,
     buildSentenceQuestions: buildSentenceQuestions, buildChooseQuestions: buildChooseQuestions,
-    buildMixQuestions: buildMixQuestions, buildReviewQuestions: buildReviewQuestions, buildGkClozeQuestions: buildGkClozeQuestions, buildConfusableWordQuestions: buildConfusableWordQuestions, CONFUSE_PAIRS: CONFUSE_PAIRS, interleave: interleave
+    buildMixQuestions: buildMixQuestions, buildReviewQuestions: buildReviewQuestions, buildGkClozeQuestions: buildGkClozeQuestions, buildConfusableWordQuestions: buildConfusableWordQuestions, buildNearHomographQuestions: buildNearHomographQuestions, CONFUSE_PAIRS: CONFUSE_PAIRS, NEARHOMOGRAPH_PAIRS: NEARHOMOGRAPH_PAIRS, interleave: interleave
   };
 
   // 顶层全局别名，便于 app.js 直接调用
@@ -2840,6 +2949,8 @@ function interleave(base, extra) {
   global.buildReviewQuestions = buildReviewQuestions;
   global.buildGkClozeQuestions = buildGkClozeQuestions;
   global.buildConfusableWordQuestions = buildConfusableWordQuestions;
+  global.buildNearHomographQuestions = buildNearHomographQuestions;
+  global.NEARHOMOGRAPH_PAIRS = NEARHOMOGRAPH_PAIRS;
   global.CONFUSE_PAIRS = CONFUSE_PAIRS;
   global.interleave = interleave;
   global.ALL_WORDS = ALL_WORDS;
@@ -3794,10 +3905,14 @@ function interleave(base, extra) {
       var spGk0 = buildGkClozeQuestions(starOpt);
       var cqS = buildConfusableWordQuestions(spW, Object.assign({}, chooseOpt, starOpt),
         { ratio: 0.15, baseLen: spWord0.length + spSent0.length + spGk0.length });
-      var usedS = {}; cqS.forEach(function (q) { usedS[String(q.word).toLowerCase()] = true; });
+      /* 形近词·选词形（新题型）：按基础题量反推目标数，保证最终占比 ≈12%；
+         与选词义去重，避免同一词在一局里既考“选词义”又考“选词形”。 */
+      var nhS = buildNearHomographQuestions(spW, Object.assign({}, chooseOpt, starOpt),
+        { ratio: 0.12, baseLen: spWord0.length + spSent0.length + spGk0.length + cqS.length });
+      var usedS = {}; cqS.concat(nhS).forEach(function (q) { usedS[String(q.word).toLowerCase()] = true; });
       var spBase = spWord0.filter(function (q) { return !usedS[String(q.word || '').toLowerCase()]; })
         .concat(spSent0).concat(spGk0);
-      questions = interleave(spBase, cqS);
+      questions = interleave(spBase, cqS.concat(nhS));
     } else if (mode === 'choose') {
       var rw = poolWords(_read);
       if (rw.length === 0) rw = poolWords(ALL_WORDS); // 兜底：某分组可能全为拼写类，回退到全部词，保证听音选义总能出题
@@ -3810,10 +3925,13 @@ function interleave(base, extra) {
       var mixGk0 = buildGkClozeQuestions(starOpt);
       var cqM = buildConfusableWordQuestions(mw, Object.assign({}, chooseOpt, starOpt),
         { ratio: 0.25, baseLen: mixWord0.length + mixGk0.length });
-      var usedM = {}; cqM.forEach(function (q) { usedM[String(q.word).toLowerCase()] = true; });
+      /* 形近词·选词形（新题型）：混合模式占比 ≈18%，与选词义去重 */
+      var nhM = buildNearHomographQuestions(mw, Object.assign({}, chooseOpt, starOpt),
+        { ratio: 0.18, baseLen: mixWord0.length + mixGk0.length + cqM.length });
+      var usedM = {}; cqM.concat(nhM).forEach(function (q) { usedM[String(q.word).toLowerCase()] = true; });
       var mixBase = mixWord0.filter(function (q) { return !usedM[String(q.word || '').toLowerCase()]; })
         .concat(mixGk0);
-      questions = interleave(mixBase, cqM);
+      questions = interleave(mixBase, cqM.concat(nhM));
     } else if (mode === 'review') {
       var rw = poolWords(getReviewWords());
       if (rw.length === 0) {
@@ -3897,7 +4015,8 @@ function interleave(base, extra) {
       html += letterPadHtml(q.target, baseDiff);
     } else if (q.type === 'choose') {
       html += '<span class="qtag">' + (q.tag || '听音选义 · 一词多义') + '</span>';
-      html += '<button class="audio-btn" onclick="speak(\'' + q.word.replace(/'/g, "\\'") + '\')">🔊 点击听发音</button>';
+      /* 形近词·选词形（noAudio）必须关闭音频，否则朗读会直接泄露答案拼写 */
+      if (!q.noAudio) html += '<button class="audio-btn" onclick="speak(\'' + q.word.replace(/'/g, "\\'") + '\')">🔊 点击听发音</button>';
       var ex0 = '';
       try { if (q.allSenses && q.allSenses.length) { var f = q.allSenses.filter(function (s) { return s.example; }); if (f.length) ex0 = f[0].example; } } catch (e) {}
       if (!q.hideEx) html += (ex0 ? '<div class="qex">📖 ' + scrubAnswer(ex0, q.word || '') + '</div>' : '');
@@ -4443,12 +4562,13 @@ function interleave(base, extra) {
         playDing('ok');
         applyTimeReward(q);
         grantStreakGift();
-        showFeedback('ok', '✅ 正确！' + (pt ? ' <b>' + pt + '</b>' : ''), '', answerBlock(q));
+        showFeedback('ok', '✅ 正确！' + (pt ? ' <b>' + pt + '</b>' : ''), (q && q.tip ? '💡 ' + q.tip : ''), answerBlock(q));
       } else {
         state.streak = 0;
         applyTimeFail();
         var et = praiseText('err'); speakPraise('err', et); playDing('err');
         var _det = '正确答案：' + (q.testSense && q.testSense.cnDef);
+        if (q && q.tip) _det += '　💡 ' + q.tip;
         showFeedback('err', '❌ 答错了' + (et ? ' <b>' + et + '</b>' : ''), _det, answerBlock(q));
       }
       adjustDifficulty(correct);
